@@ -1,0 +1,64 @@
+pipeline{
+    agent any
+    stages{
+        stage('checkout-master'){
+            steps{
+                git credentialsId: 'git_lab', url: 'https://gitlab.com/4reysn/mvnrepo.git'
+            }
+            }
+        stage('BUild-master'){
+            steps{
+                sh 'mvn package -f pom.xml'
+            }
+        }
+        stage('Deployment'){
+            steps{
+                deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://35.239.98.40:8080/')], contextPath: null, war: 'target/titan.war'
+            }
+        }
+        stage ('Approvals to move war to nexus') {
+           steps {
+           echo "Taking approval from Manager for artifacts to NEXUSREPO"
+           timeout(time: 7, unit: 'DAYS') {
+            input message: 'Do you want to move war to NEXUS REPO?', submitter: 'ysn4re'
+        }
+      }
+    }
+        stage('WAR to Nexus REPO'){
+            steps{
+               
+                nexusArtifactUploader artifacts: [[artifactId: 'titan', classifier: '', file: 'target/titan.war', type: 'war']], credentialsId: 'nexus', groupId: 'com.pipeline', nexusUrl: '35.192.193.229:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'maven-snapshots', version: '1.0-SNAPSHOT'
+            }
+        }
+        stage('checkout-branch'){
+            steps{
+                git branch: 'Release_0.17', credentialsId: 'git_lab', url: 'https://gitlab.com/4reysn/mvnrepo.git'
+            }
+        }
+//build the branch code then move it to NEXUS REPO        
+        stage('BUILD-Branch'){
+            steps{
+                sh 'mvn package -f pom.xml'
+            }
+        }
+        stage('war to NEXUS'){
+            steps{
+               nexusArtifactUploader artifacts: [[artifactId: 'Release_0.17', classifier: '', file: 'target/Release_0.17.war', type: 'war']], credentialsId: 'nexus', groupId: 'com.devops', nexusUrl: '35.192.193.229:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'maven-snapshots', version: '1.0-SNAPSHOT'
+                }
+        }
+//all the stage completed successfully as of now
+       stage('Approvals to DEPLOY war in PRE_PROD env'){
+           steps{
+                echo "Taking approval from  Manager for PRE_PROD  Deployment"
+           timeout(time: 7, unit: 'DAYS') {
+            input message: 'Do you want to deploy?', submitter: 'ysn4re'
+        }
+     }
+}
+       stage('Pre-Prod deployment'){
+           steps{
+               deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://35.192.193.229:8090/')], contextPath: null, war: 'target/Release_0.17.war'
+           }
+       }
+}
+}
